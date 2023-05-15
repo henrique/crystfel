@@ -101,7 +101,7 @@ struct indexamajig_arguments
 	struct taketwo_options **taketwo_opts_ptr;
 	struct felix_options **felix_opts_ptr;
 	struct xgandalf_options **xgandalf_opts_ptr;
-    struct ffbidx_options **ffbidx_opts_ptr;
+	struct ffbidx_options **ffbidx_opts_ptr;
 	struct pinkindexer_options **pinkindexer_opts_ptr;
 	struct fromfile_options **fromfile_opts_ptr;
 	struct asdf_options **asdf_opts_ptr;
@@ -1115,7 +1115,7 @@ int main(int argc, char *argv[])
 		{&pinkIndexer_argp, 0, NULL, -2},
 		{&fromfile_argp, 0, NULL, -2},
 		{&asdf_argp, 0, NULL, -2},
-        {&ffbidx_argp, 0, NULL, -2},
+		{&ffbidx_argp, 0, NULL, -2},
 		{0}
 	};
 

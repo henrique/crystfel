@@ -260,9 +260,9 @@ static void *prepare_method(IndexingMethod *m, UnitCell *cell,
 		priv = xgandalf_prepare(m, cell, xgandalf_opts);
 		break;
 
-        case INDEXING_FFBIDX :
-        priv = ffbidx_prepare(m, cell, ffbidx_opts);
-        break;
+		case INDEXING_FFBIDX :
+		priv = ffbidx_prepare(m, cell, ffbidx_opts);
+		break;
 
 		case INDEXING_PINKINDEXER :
 		priv = pinkIndexer_prepare(m, cell, pinkIndexer_opts,
@@ -687,14 +687,14 @@ static int try_indexer(struct image *image, IndexingMethod indm,
 		profile_end("xgandalf");
 		break;
 
-        case INDEXING_FFBIDX:
-        set_last_task(last_task, "indexing:ffbidx");
-        profile_start("ffbidx");
-        r = run_ffbidx(image, mpriv);
-        profile_end("ffbidx");
-        break;
+		case INDEXING_FFBIDX:
+		set_last_task(last_task, "indexing:ffbidx");
+		profile_start("ffbidx");
+		r = run_ffbidx(image, mpriv);
+		profile_end("ffbidx");
+		break;
 
-        default :
+		default :
 		ERROR("Unrecognised indexing method: %i\n", indm);
 		return 0;
 

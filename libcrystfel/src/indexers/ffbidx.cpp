@@ -26,21 +26,23 @@
  * along with CrystFEL.  If not, see <http://www.gnu.org/licenses/>.
  *
  */
+#include <torch/torch.h>
+#include <torch/script.h>
+
+#include "ffbidx.h"
+#include "cell-utils.h"
 
 #include <libcrystfel-config.h>
 #include <stdio.h>
 #include <stdlib.h>
 
-#include "cell-utils.h"
-#include "ffbidx.h"
 
-#ifdef HAVE_FFBIDX
-
-#include <ffbidx/c-wrapper.h>
+// #ifdef HAVE_TORCH
 
 struct ffbidx_private_data {
     UnitCell *cellTemplate;
     struct ffbidx_options opts;
+    torch::jit::script::Module module;
 };
 
 static void makeRightHanded(UnitCell *cell)
@@ -100,15 +102,26 @@ int run_ffbidx(struct image *image, void *ipriv) {
     for (int i = 0; i < 9; i++)
         cell[i] = cell_internal_double[i] * 1e10;
 
-    struct ffbidx_settings settings;
-    settings.cpers_max_spots = prv_data->opts.max_peaks;
-    settings.cifss_min_spots = prv_data->opts.min_peaks;
-    settings.cvc_threshold = prv_data->opts.threshold_for_solution;
-    settings.cpers_max_output_cells = prv_data->opts.output_cells;
-    settings.crt_num_sample_points = prv_data->opts.sample_points;
-    settings.cpers_num_candidate_vectors = prv_data->opts.num_candidate_vectors;
+    // struct ffbidx_settings settings;
+    // settings.cpers_max_spots = prv_data->opts.max_peaks;
+    // settings.cifss_min_spots = prv_data->opts.min_peaks;
+    // settings.cvc_threshold = prv_data->opts.threshold_for_solution;
+    // settings.cpers_max_output_cells = prv_data->opts.output_cells;
+    // settings.crt_num_sample_points = prv_data->opts.sample_points;
+    // settings.cpers_num_candidate_vectors = prv_data->opts.num_candidate_vectors;
     
-    fast_feedback_crystfel(&settings, cell, x, y, z, npk);
+    // fast_feedback_crystfel(&settings, cell, x, y, z, npk);
+
+    // Create a vector of inputs.
+    std::vector<torch::jit::IValue> inputs;
+    inputs.push_back(torch::from_blob(cell, {3, 3}));
+
+    std::cout << "inputs:\n" << inputs[0] << '\n';
+
+    // Execute the model and turn its output into a tensor.
+    at::Tensor output = prv_data->module(inputs).toTensor();
+    std::cout << "output:\n" << output << '\n';
+    // STATUS()
 
     free(x);
     free(y);
@@ -152,51 +165,66 @@ void *ffbidx_prepare(IndexingMethod *indm, UnitCell *cell, struct ffbidx_options
         return NULL;
     }
 
-    struct ffbidx_private_data *prv_data = (struct ffbidx_private_data *) malloc(sizeof(struct ffbidx_private_data));
+    // struct ffbidx_private_data *prv_data = (struct ffbidx_private_data *) malloc(sizeof(struct ffbidx_private_data));
+    struct ffbidx_private_data *prv_data = new ffbidx_private_data;
 
     prv_data->cellTemplate = cell;
     prv_data->opts = *opts;
 
-    *indm &= INDEXING_METHOD_MASK | INDEXING_USE_CELL_PARAMETERS;
+    try {
+        // Deserialize the ScriptModule from a file using torch::jit::load().
+        STATUS("Loading model %s.\n", opts->filename);
+        prv_data->module = torch::jit::load(opts->filename);
+        // torch::jit::script::Module module = torch::jit::load(opts->filename);
+        // prv_data->module = module;
+        STATUS("Loaded model %s.\n", opts->filename);
+    }
+    catch (const c10::Error& e) {
+        ERROR("Error loading the model %s.\n", opts->filename);
+        return NULL;
+    }
+
+    // *indm &= INDEXING_METHOD_MASK | INDEXING_USE_CELL_PARAMETERS;
     return prv_data;
 }
 
-void ffbidx_cleanup(void *pp) {
-    free(pp);
+void ffbidx_cleanup(void *ipriv) {
+    struct ffbidx_private_data *prv_data = (struct ffbidx_private_data *) ipriv;
+    delete(prv_data);
 }
 
 const char *ffbidx_probe(UnitCell *cell) {
     return "ffbidx";
 }
 
-#else
+// #else
 
-int run_ffbidx(struct image *image, void *ipriv)
-{
-	ERROR("This copy of CrystFEL was compiled without FFBIDX support.\n");
-	return 0;
-}
-
-
-void *ffbidx_prepare(IndexingMethod *indm, UnitCell *cell, struct ffbidx_options *opts)
-{
-	ERROR("This copy of CrystFEL was compiled without FFBIDX support.\n");
-	ERROR("To use FFBIDX indexing, recompile with FFBIDX.\n");
-	return NULL;
-}
+// int run_ffbidx(struct image *image, void *ipriv)
+// {
+// 	ERROR("This copy of CrystFEL was compiled without FFBIDX support.\n");
+// 	return 0;
+// }
 
 
-void ffbidx_cleanup(void *pp)
-{
-}
+// void *ffbidx_prepare(IndexingMethod *indm, UnitCell *cell, struct ffbidx_options *opts)
+// {
+// 	ERROR("This copy of CrystFEL was compiled without FFBIDX support.\n");
+// 	ERROR("To use FFBIDX indexing, recompile with FFBIDX.\n");
+// 	return NULL;
+// }
 
 
-const char *ffbidx_probe(UnitCell *cell)
-{
-	return NULL;
-}
+// void ffbidx_cleanup(void *pp)
+// {
+// }
 
-#endif
+
+// const char *ffbidx_probe(UnitCell *cell)
+// {
+// 	return NULL;
+// }
+
+// #endif
 
 static void ffbidx_show_help()
 {
@@ -217,6 +245,8 @@ static void ffbidx_show_help()
            "     --ffbidx-sample-points\n"
            "                            Number of sample points.\n"
            "                            Default: 32768\n"
+           "     --ffbidx-filename\n"
+           "                            TorchScript filename.\n"
 
     );
 }
@@ -224,9 +254,7 @@ static void ffbidx_show_help()
 
 int ffbidx_default_options(struct ffbidx_options **opts_ptr)
 {
-    struct ffbidx_options *opts;
-
-    opts = malloc(sizeof(struct ffbidx_options));
+    struct ffbidx_options *opts = new ffbidx_options();
     if ( opts == NULL ) return ENOMEM;
 
     opts->max_peaks = 100;
@@ -235,6 +263,7 @@ int ffbidx_default_options(struct ffbidx_options **opts_ptr)
     opts->output_cells = 1;
     opts->sample_points = 32*1024;
     opts->num_candidate_vectors = 32;
+    opts->filename = NULL;
     *opts_ptr = opts;
     return 0;
 }
@@ -242,7 +271,7 @@ int ffbidx_default_options(struct ffbidx_options **opts_ptr)
 
 static error_t ffbidx_parse_arg(int key, char *arg, struct argp_state *state)
 {
-    struct ffbidx_options **opts_ptr = state->input;
+    struct ffbidx_options **opts_ptr = static_cast<struct ffbidx_options**>(state->input);
     int r;
 
     switch ( key ) {
@@ -284,7 +313,7 @@ static error_t ffbidx_parse_arg(int key, char *arg, struct argp_state *state)
                 ERROR("Invalid value for --ffbidx-output-cells\n");
                 return EINVAL;
             }
-            if (((*opts_ptr)->output_cells == 0) || ((*opts_ptr)->output_cells > 128)) {
+            if (((*opts_ptr)->output_cells <= 0) || ((*opts_ptr)->output_cells > 128)) {
                 ERROR("Invalid value for --ffbidx-output-cells; must be in range 1-128\n");
                 return EINVAL;
             }
@@ -294,6 +323,15 @@ static error_t ffbidx_parse_arg(int key, char *arg, struct argp_state *state)
                 ERROR("Invalid value for --ffbidx-sample-points\n");
                 return EINVAL;
             }
+            break;
+        case 7 :
+            STATUS("--ffbidx-filename %s \n", arg);
+            // if (sscanf(arg, "%s", (*opts_ptr)->filename) != 1) {
+            //     ERROR("Invalid value for --ffbidx-filename\n");
+            //     return EINVAL;
+            // }
+            (*opts_ptr)->filename = arg;
+            STATUS("--ffbidx-filename %s \n", (*opts_ptr)->filename);
             break;
     }
 
@@ -308,9 +346,9 @@ static struct argp_option ffbidx_options[] = {
         {"ffbidx-threshold", 4, "ffbidx_threshold", OPTION_HIDDEN, NULL},
         {"ffbidx-output-cells", 5, "ffbidx_out_cells", OPTION_HIDDEN, NULL},
         {"ffbidx-sample-points", 6, "ffbidx_sample_points", OPTION_HIDDEN, NULL},
+        {"ffbidx-filename", 7, "ffbidx_filename", OPTION_HIDDEN, NULL},
         {0}
 };
 
 
-struct argp ffbidx_argp = { ffbidx_options, ffbidx_parse_arg,
-                              NULL, NULL, NULL, NULL, NULL };
+struct argp ffbidx_argp = { ffbidx_options, ffbidx_parse_arg, NULL, NULL, NULL, NULL, NULL };

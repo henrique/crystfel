@@ -578,7 +578,7 @@ static void run_indexing_once(struct crystfelproject *proj)
 	struct pinkindexer_options *pinkIndexer_opts;
 	struct fromfile_options *fromfile_opts;
 	struct asdf_options *asdf_opts;
-    struct ffbidx_options *ffbidx_opts;
+	struct ffbidx_options *ffbidx_opts;
 
 	char *old_cwd;
 	char *tmpdir;

@@ -3,7 +3,11 @@ project(libcrystfel VERSION ${CRYSTFEL_SHORT_VERSION} LANGUAGES C)
 pkg_check_modules(XGANDALF xgandalf)
 pkg_check_modules(PINKINDEXER pinkIndexer)
 pkg_check_modules(FDIP fdip)
-pkg_check_modules(FFBIDX fast_indexer_crystfel)
+# pkg_check_modules(FFBIDX fast_indexer_crystfel)
+enable_language(CXX)
+find_package(Torch REQUIRED)
+find_package(kinetoLibrary REQUIRED)
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${TORCH_CXX_FLAGS}")
 find_package(ZLIB)
 find_package(FLEX REQUIRED)
 find_package(BISON REQUIRED)
@@ -17,7 +21,8 @@ set(HAVE_FFTW ${FFTW_FOUND})
 set(HAVE_XGANDALF ${XGANDALF_FOUND})
 set(HAVE_PINKINDEXER ${PINKINDEXER_FOUND})
 set(HAVE_FDIP ${FDIP_FOUND})
-set(HAVE_FFBIDX ${FFBIDX_FOUND})
+# set(HAVE_FFBIDX ${FFBIDX_FOUND})
+set(HAVE_TORCH ${TORCH_FOUND})
 set(HAVE_MSGPACK ${MSGPACK_FOUND})
 set(HAVE_LIBCCP4 ${LIBCCP4_FOUND})
 set(HAVE_ZLIB ${ZLIB_FOUND})
@@ -78,7 +83,7 @@ set(LIBCRYSTFEL_SOURCES
     src/indexers/xgandalf.c
     src/indexers/pinkindexer.c
     src/indexers/fromfile.c
-    src/indexers/ffbidx.c
+    src/indexers/ffbidx.cpp
 )
 
 set(LIBCRYSTFEL_HEADERS
@@ -113,6 +118,8 @@ add_library(${PROJECT_NAME} SHARED
             ${CMAKE_CURRENT_BINARY_DIR}/libcrystfel-version.c
             ${LIBCRYSTFEL_HEADERS})
 
+set_property(TARGET ${PROJECT_NAME} PROPERTY CXX_STANDARD 14)
+set_target_properties(${PROJECT_NAME} PROPERTIES CXX_STANDARD 14)
 set_target_properties(${PROJECT_NAME} PROPERTIES INSTALL_RPATH_USE_LINK_PATH TRUE)
 set_target_properties(${PROJECT_NAME} PROPERTIES BUILD_WITH_INSTALL_RPATH TRUE)
 #set_target_properties(${PROJECT_NAME} PROPERTIES SKIP_BUILD_RPATH FALSE)
@@ -134,7 +141,7 @@ include_directories(${CMAKE_CURRENT_BINARY_DIR})
 
 target_include_directories(${PROJECT_NAME} PRIVATE ${HDF5_INCLUDE_DIRS} ${ZLIB_INCLUDE_DIRS})
 target_link_libraries(${PROJECT_NAME} PRIVATE util ${HDF5_C_LIBRARIES} ${HDF5_C_HL_LIBRARIES}
-                      ${ZLIB_LIBRARIES} Threads::Threads GSL::gsl m)
+                      ${ZLIB_LIBRARIES} ${TORCH_LIBRARIES} Threads::Threads GSL::gsl m)
 
 if (XGANDALF_FOUND)
   target_include_directories(${PROJECT_NAME} PRIVATE ${XGANDALF_INCLUDE_DIRS})
@@ -150,11 +157,6 @@ if (PINKINDEXER_FOUND)
   target_include_directories(${PROJECT_NAME} PRIVATE ${PINKINDEXER_INCLUDE_DIRS})
   target_link_libraries(${PROJECT_NAME} PRIVATE ${PINKINDEXER_LINK_LIBRARIES})
 endif (PINKINDEXER_FOUND)
-
-if (FFBIDX_FOUND)
-    target_include_directories(${PROJECT_NAME} PRIVATE ${FFBIDX_INCLUDE_DIRS})
-    target_link_libraries(${PROJECT_NAME} PRIVATE ${FFBIDX_LINK_LIBRARIES})
-endif (FFBIDX_FOUND)
 
 if (FFTW_FOUND)
   target_include_directories(${PROJECT_NAME} PRIVATE ${FFTW_INCLUDE_DIRS})

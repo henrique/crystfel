@@ -160,12 +160,13 @@ struct xgandalf_options {
 };
 
 struct ffbidx_options {
-    unsigned max_peaks;
-    unsigned min_peaks;
-    float threshold_for_solution;
-    unsigned output_cells;
-    unsigned sample_points;
-    unsigned num_candidate_vectors;   // number of candidate sampling vectors kept
+	int max_peaks;
+	int min_peaks;
+	float threshold_for_solution;
+	int output_cells;
+	int sample_points;
+	int num_candidate_vectors;   // number of candidate sampling vectors kept
+	char *filename;
 };
 
 struct taketwo_options
