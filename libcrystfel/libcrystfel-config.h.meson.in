@@ -5,6 +5,7 @@
 #mesondefine HAVE_PINKINDEXER
 #mesondefine HAVE_FDIP
 #mesondefine HAVE_ZLIB
+#cmakedefine HAVE_TORCH
 #mesondefine HAVE_GZBUFFER
 #mesondefine HAVE_LIBCCP4
 #mesondefine HAVE_MSGPACK

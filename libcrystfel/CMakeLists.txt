@@ -1,4 +1,4 @@
-project(libcrystfel VERSION ${CRYSTFEL_SHORT_VERSION} LANGUAGES C)
+project(libcrystfel VERSION ${CRYSTFEL_SHORT_VERSION} LANGUAGES C CXX)
 
 pkg_check_modules(XGANDALF xgandalf)
 pkg_check_modules(PINKINDEXER pinkIndexer)
@@ -6,6 +6,8 @@ pkg_check_modules(FDIP fdip)
 find_package(ZLIB)
 find_package(FLEX REQUIRED)
 find_package(BISON REQUIRED)
+find_package(Torch)
+# find_package(kinetoLibrary REQUIRED)
 pkg_check_modules(MSGPACK msgpack)
 pkg_check_modules(FFTW fftw3)
 pkg_check_modules(LIBCCP4 libccp4c)
@@ -16,6 +18,7 @@ set(HAVE_FFTW ${FFTW_FOUND})
 set(HAVE_XGANDALF ${XGANDALF_FOUND})
 set(HAVE_PINKINDEXER ${PINKINDEXER_FOUND})
 set(HAVE_FDIP ${FDIP_FOUND})
+set(HAVE_TORCH ${TORCH_FOUND})
 set(HAVE_MSGPACK ${MSGPACK_FOUND})
 set(HAVE_LIBCCP4 ${LIBCCP4_FOUND})
 set(HAVE_ZLIB ${ZLIB_FOUND})
@@ -76,6 +79,7 @@ set(LIBCRYSTFEL_SOURCES
     src/indexers/xgandalf.c
     src/indexers/pinkindexer.c
     src/indexers/fromfile.c
+    src/indexers/torchidx.cpp
 )
 
 set(LIBCRYSTFEL_HEADERS
@@ -110,6 +114,8 @@ add_library(${PROJECT_NAME} SHARED
             ${CMAKE_CURRENT_BINARY_DIR}/libcrystfel-version.c
             ${LIBCRYSTFEL_HEADERS})
 
+set_property(TARGET ${PROJECT_NAME} PROPERTY CXX_STANDARD 14)
+set_target_properties(${PROJECT_NAME} PROPERTIES CXX_STANDARD 14)
 set_target_properties(${PROJECT_NAME} PROPERTIES INSTALL_RPATH_USE_LINK_PATH TRUE)
 set_target_properties(${PROJECT_NAME} PROPERTIES BUILD_WITH_INSTALL_RPATH TRUE)
 #set_target_properties(${PROJECT_NAME} PROPERTIES SKIP_BUILD_RPATH FALSE)
@@ -132,6 +138,11 @@ include_directories(${CMAKE_CURRENT_BINARY_DIR})
 target_include_directories(${PROJECT_NAME} PRIVATE ${HDF5_INCLUDE_DIRS} ${ZLIB_INCLUDE_DIRS})
 target_link_libraries(${PROJECT_NAME} PRIVATE util ${HDF5_C_LIBRARIES} ${HDF5_C_HL_LIBRARIES}
                       ${ZLIB_LIBRARIES} Threads::Threads GSL::gsl m)
+
+if (TORCH_FOUND)
+  target_link_libraries(${PROJECT_NAME} PRIVATE ${TORCH_LIBRARIES})
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${TORCH_CXX_FLAGS}")
+endif (TORCH_FOUND)
 
 if (XGANDALF_FOUND)
   target_include_directories(${PROJECT_NAME} PRIVATE ${XGANDALF_INCLUDE_DIRS})
