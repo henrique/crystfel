@@ -66,16 +66,9 @@ int run_torchidx(struct image *image, void *ipriv) {
     if ( npk < prv_data->opts.min_peaks )
         return 0;
 
-    float *x = (float *) calloc(npk, sizeof(float));
-    float *y = (float *) calloc(npk, sizeof(float));
-    float *z = (float *) calloc(npk, sizeof(float));
-
+    double peaks[npk][3];
     for ( i=0; i<npk; i++ ) {
-
-        struct imagefeature *f;
-        double r[3];
-
-        f = image_get_feature(image->features, i);
+        struct imagefeature *f = image_get_feature(image->features, i);
         if ( f == NULL ) {
             ERROR("Empty feature ???");
             continue;
@@ -83,15 +76,10 @@ int run_torchidx(struct image *image, void *ipriv) {
 
         detgeom_transform_coords(&image->detgeom->panels[f->pn],
                                  f->fs, f->ss, image->lambda,
-                                 0.0, 0.0, r);
-        x[i] = r[0] * 1e-10;
-        y[i] = r[1] * 1e-10;
-        z[i] = r[2] * 1e-10;
+                                 0.0, 0.0, peaks[i]);
     }
 
-
     float cell[9];
-
     double cell_internal_double[9];
 
     cell_get_cartesian(prv_data->cellTemplate,
@@ -104,30 +92,38 @@ int run_torchidx(struct image *image, void *ipriv) {
 
     // Create a vector of inputs.
     std::vector<torch::jit::IValue> inputs;
+    inputs.push_back(torch::from_blob(peaks, {1, npk, 3}, torch::dtype(torch::kFloat64)).to(torch::kFloat32) * 1e-10);
     inputs.push_back(torch::from_blob(cell, {3, 3}));
+    inputs.push_back(prv_data->opts.min_peaks);
+    inputs.push_back(180);
+    inputs.push_back(prv_data->opts.num_candidate_vectors);
 
-    std::cout << "inputs:\n" << inputs[0] << '\n';
+    // Execute the model and turn its output into a tuple of tensors.
+    auto output = prv_data->module(inputs).toTuple()->elements();
+    if (output[0].toTensor().size(0) == 0) {
+        // std::cout << "input0:\n" << inputs[0] << '\n';
+        // std::cout << "input1:\n" << inputs[1] << '\n';
+        STATUS("torchidx: crystal not found for %s\n", image->ev);
+        return 0;
+    }
 
-    // Execute the model and turn its output into a tensor.
-    at::Tensor output = prv_data->module(inputs).toTensor();
-    // convert to meters
-    output = output * 1e-10;
-    std::cout << "output:\n" << output << '\n';
+    std::cout << "output0:\n" << output[0] << '\n';
+    std::cout << "output1:\n" << output[1] << '\n';
 
-    free(x);
-    free(y);
-    free(z);
+    // // invert cell
+    // auto cell_m = torch::linalg::inv(output[1].toTensor()[0][0]);
 
+    // // convert to meters ?  // * 1e-10;
+    auto cell_m = output[1].toTensor()[0][0];
+    std::cout << "cell_m:\n" << cell_m << '\n';
+
+    auto ocell = cell_m.accessor<float,2>();
     UnitCell *uc;
-
     uc = cell_new();
-    auto ocell = output.accessor<float,2>();
-
     cell_set_cartesian(uc,
                         ocell[0][0], ocell[1][0], ocell[2][0],
                         ocell[0][1], ocell[1][1], ocell[2][1],
                         ocell[0][2], ocell[1][2], ocell[2][2]);
-
     makeRightHanded(uc);
 
     cell_set_lattice_type(uc, cell_get_lattice_type(prv_data->cellTemplate));
