@@ -94,6 +94,8 @@ int run_torchidx(struct image *image, void *ipriv) {
     std::vector<torch::jit::IValue> inputs;
     inputs.push_back(torch::from_blob(peaks, {1, npk, 3}, torch::dtype(torch::kFloat64)).to(torch::kFloat32) * 1e-10);
     inputs.push_back(torch::from_blob(cell, {3, 3}));
+    // inputs.push_back(torch::from_blob(peaks, {1, npk, 3}, torch::dtype(torch::kFloat64)) * 1e-10);
+    // inputs.push_back(torch::from_blob(cell_internal_double, {3, 3}, torch::dtype(torch::kFloat64)) * 1e10);
     inputs.push_back(prv_data->opts.min_peaks);
     inputs.push_back(180);
     inputs.push_back(prv_data->opts.num_candidate_vectors);
@@ -107,15 +109,11 @@ int run_torchidx(struct image *image, void *ipriv) {
         return 0;
     }
 
-    std::cout << "output0:\n" << output[0] << '\n';
-    std::cout << "output1:\n" << output[1] << '\n';
+    // std::cout << "output0:\n" << output[0] << '\n';
+    // std::cout << "output1:\n" << output[1] << '\n';
 
-    // // invert cell
-    // auto cell_m = torch::linalg::inv(output[1].toTensor()[0][0]);
-
-    // // convert to meters ?  // * 1e-10;
-    auto cell_m = output[1].toTensor()[0][0];
-    std::cout << "cell_m:\n" << cell_m << '\n';
+    // transpose and scale
+    auto cell_m = output[1].toTensor()[0][0].transpose(0, 1) * 1e-10;
 
     auto ocell = cell_m.accessor<float,2>();
     UnitCell *uc;
@@ -129,6 +127,16 @@ int run_torchidx(struct image *image, void *ipriv) {
     cell_set_lattice_type(uc, cell_get_lattice_type(prv_data->cellTemplate));
     cell_set_centering(uc, cell_get_centering(prv_data->cellTemplate));
     cell_set_unique_axis(uc, cell_get_unique_axis(prv_data->cellTemplate));
+
+    // double cell_internal_double[9];
+    // cell_get_cartesian(uc,
+    //                    &cell_internal_double[0],&cell_internal_double[1],&cell_internal_double[2],
+    //                    &cell_internal_double[3],&cell_internal_double[4],&cell_internal_double[5],
+    //                    &cell_internal_double[6],&cell_internal_double[7],&cell_internal_double[8]);
+    // ERROR("torch cell: [%e %e %e], [%e %e %e], [%e %e %e] %s\n",
+    //                    cell_internal_double[0],cell_internal_double[1],cell_internal_double[2],
+    //                    cell_internal_double[3],cell_internal_double[4],cell_internal_double[5],
+    //                    cell_internal_double[6],cell_internal_double[7],cell_internal_double[8], image->ev);
 
     if ( validate_cell(uc) ) {
         ERROR("torchidx: problem with returned cell!\n");
