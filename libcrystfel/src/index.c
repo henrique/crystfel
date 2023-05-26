@@ -1279,7 +1279,7 @@ void default_method_options(struct taketwo_options **ttopts,
 {
 	taketwo_default_options(ttopts);
 	xgandalf_default_options(xgandalf_opts);
-    torchidx_default_options(torchidx_opts);
+	torchidx_default_options(torchidx_opts);
 	pinkIndexer_default_options(pinkIndexer_opts);
 	felix_default_options(felix_opts);
 	fromfile_default_options(fromfile_opts);

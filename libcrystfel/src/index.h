@@ -160,12 +160,10 @@ struct xgandalf_options {
 };
 
 struct torchidx_options {
-	int max_peaks;
-	int min_peaks;
-	float threshold_for_solution;
-	int output_cells;
-	int sample_points;
-	int num_candidate_vectors;   // number of candidate sampling vectors kept
+	int min_peaks;         // The minimum number of spots that a valid solution most have
+	int angle_resolution;  // The number of samples used to rotate the given triples
+	int num_top_solutions; // The number of candidate solutions to be considered by the algorithm
+	int num_threads;
 	char *filename;
 };
 

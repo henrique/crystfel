@@ -97,8 +97,8 @@ int run_torchidx(struct image *image, void *ipriv) {
     // inputs.push_back(torch::from_blob(peaks, {1, npk, 3}, torch::dtype(torch::kFloat64)) * 1e-10);
     // inputs.push_back(torch::from_blob(cell_internal_double, {3, 3}, torch::dtype(torch::kFloat64)) * 1e10);
     inputs.push_back(prv_data->opts.min_peaks);
-    inputs.push_back(180);
-    inputs.push_back(prv_data->opts.num_candidate_vectors);
+    inputs.push_back(prv_data->opts.angle_resolution);
+    inputs.push_back(prv_data->opts.num_top_solutions);
 
     // Execute the model and turn its output into a tuple of tensors.
     auto output = prv_data->module(inputs).toTuple()->elements();
@@ -127,16 +127,6 @@ int run_torchidx(struct image *image, void *ipriv) {
     cell_set_lattice_type(uc, cell_get_lattice_type(prv_data->cellTemplate));
     cell_set_centering(uc, cell_get_centering(prv_data->cellTemplate));
     cell_set_unique_axis(uc, cell_get_unique_axis(prv_data->cellTemplate));
-
-    // double cell_internal_double[9];
-    // cell_get_cartesian(uc,
-    //                    &cell_internal_double[0],&cell_internal_double[1],&cell_internal_double[2],
-    //                    &cell_internal_double[3],&cell_internal_double[4],&cell_internal_double[5],
-    //                    &cell_internal_double[6],&cell_internal_double[7],&cell_internal_double[8]);
-    // ERROR("torch cell: [%e %e %e], [%e %e %e], [%e %e %e] %s\n",
-    //                    cell_internal_double[0],cell_internal_double[1],cell_internal_double[2],
-    //                    cell_internal_double[3],cell_internal_double[4],cell_internal_double[5],
-    //                    cell_internal_double[6],cell_internal_double[7],cell_internal_double[8], image->ev);
 
     if ( validate_cell(uc) ) {
         ERROR("torchidx: problem with returned cell!\n");
@@ -171,8 +161,7 @@ void *torchidx_prepare(IndexingMethod *indm, UnitCell *cell, struct torchidx_opt
         // Deserialize the ScriptModule from a file using torch::jit::load().
         STATUS("Loading model %s.\n", opts->filename);
         prv_data->module = torch::jit::load(opts->filename);
-        // torch::jit::script::Module module = torch::jit::load(opts->filename);
-        // prv_data->module = module;
+        torch::set_num_threads(prv_data->opts.num_threads);
         STATUS("Loaded model %s.\n", opts->filename);
     }
     catch (const c10::Error& e) {
@@ -225,22 +214,18 @@ const char *torchidx_probe(UnitCell *cell)
 static void torchidx_show_help()
 {
     printf("Parameters for the fast feedback indexing algorithm:\n"
-           "     --torchidx-max-peaks\n"
-           "                            Maximum number of peaks used for indexing.\n"
-           "                            All peaks are used for refinement.\n"
-           "                            Default: 250\n"
            "     --torchidx-min-peaks\n"
-           "                            Maximum number of indexed peaks to accept solution.\n"
+           "                            The minimum number of spots that a valid solution most have.\n"
            "                            Default: 9\n"
-           "     --torchidx-threshold\n"
-           "                            Threshold to accept solution as indexed.\n"
-           "                            Default: 0.02\n"
-           "     --torchidx-output-cells\n"
-           "                            Number of output cells.\n"
+           "     --torchidx-angle-resolution\n"
+           "                            The number of samples used to rotate the given triples.\n"
+           "                            Default: 180\n"
+           "     --torchidx-num-top-solutionsn"
+           "                            The number of candidate solutions to be considered by the algorithm.\n"
            "                            Default: 1\n"
-           "     --torchidx-sample-points\n"
-           "                            Number of sample points.\n"
-           "                            Default: 32768\n"
+           "     --torchidx-num-threads\n"
+           "                            Number of threads on each worker process.\n"
+           "                            Default: 1\n"
            "     --torchidx-filename\n"
            "                            TorchScript filename.\n"
 
@@ -253,17 +238,14 @@ int torchidx_default_options(struct torchidx_options **opts_ptr)
     struct torchidx_options *opts = new torchidx_options();
     if ( opts == NULL ) return ENOMEM;
 
-    opts->max_peaks = 100;
     opts->min_peaks = 9;
-    opts->threshold_for_solution = 0.02f;
-    opts->output_cells = 1;
-    opts->sample_points = 32*1024;
-    opts->num_candidate_vectors = 32;
+    opts->angle_resolution = 180;
+    opts->num_top_solutions = 1;
+    opts->num_threads = 1;
     opts->filename = NULL;
     *opts_ptr = opts;
     return 0;
 }
-
 
 static error_t torchidx_parse_arg(int key, char *arg, struct argp_state *state)
 {
@@ -281,53 +263,36 @@ static error_t torchidx_parse_arg(int key, char *arg, struct argp_state *state)
             return EINVAL;
 
         case 2 :
-            if (sscanf(arg, "%u", &(*opts_ptr)->max_peaks) != 1) {
-                ERROR("Invalid value for --torchidx-max-peaks\n");
-                return EINVAL;
-            }
-            break;
-
-        case 3 :
             if (sscanf(arg, "%u", &(*opts_ptr)->min_peaks) != 1) {
                 ERROR("Invalid value for --torchidx-min-peaks\n");
                 return EINVAL;
             }
             break;
 
+        case 3 :
+            if (sscanf(arg, "%u", &(*opts_ptr)->angle_resolution) != 1) {
+                ERROR("Invalid value for --torchidx-angle-resolution\n");
+                return EINVAL;
+            }
+            break;
+
         case 4 :
-            if (sscanf(arg, "%f", &(*opts_ptr)->threshold_for_solution) != 1) {
-                ERROR("Invalid value for --torchidx-threshold\n");
-                return EINVAL;
-            }
-            if (((*opts_ptr)->threshold_for_solution <= 0.0f) || ((*opts_ptr)->threshold_for_solution > 1.0f)) {
-                ERROR("Invalid value for --torchidx-threshold; must be in range 0.0-1.0\n");
+            if (sscanf(arg, "%u", &(*opts_ptr)->num_top_solutions) != 1) {
+                ERROR("Invalid value for --torchidx-num-top-solutions\n");
                 return EINVAL;
             }
             break;
+
         case 5 :
-            if (sscanf(arg, "%u", &(*opts_ptr)->output_cells) != 1) {
-                ERROR("Invalid value for --torchidx-output-cells\n");
-                return EINVAL;
-            }
-            if (((*opts_ptr)->output_cells <= 0) || ((*opts_ptr)->output_cells > 128)) {
-                ERROR("Invalid value for --torchidx-output-cells; must be in range 1-128\n");
+            if (sscanf(arg, "%u", &(*opts_ptr)->num_threads) != 1) {
+                ERROR("Invalid value for --torchidx-num-threads\n");
                 return EINVAL;
             }
             break;
+
         case 6 :
-            if (sscanf(arg, "%u", &(*opts_ptr)->sample_points) != 1) {
-                ERROR("Invalid value for --torchidx-sample-points\n");
-                return EINVAL;
-            }
-            break;
-        case 7 :
             STATUS("--torchidx-filename %s \n", arg);
-            // if (sscanf(arg, "%s", (*opts_ptr)->filename) != 1) {
-            //     ERROR("Invalid value for --torchidx-filename\n");
-            //     return EINVAL;
-            // }
             (*opts_ptr)->filename = arg;
-            STATUS("--torchidx-filename %s \n", (*opts_ptr)->filename);
             break;
     }
 
@@ -337,12 +302,11 @@ static error_t torchidx_parse_arg(int key, char *arg, struct argp_state *state)
 
 static struct argp_option torchidx_options[] = {
         {"help-torchidx", 1, NULL, OPTION_NO_USAGE, "Show options for fast feedback indexing algorithm", 99},
-        {"torchidx-max-peaks", 2, "torchidx_maxn", OPTION_HIDDEN, NULL},
-        {"torchidx-min-peaks", 3, "torchidx_minn", OPTION_HIDDEN, NULL},
-        {"torchidx-threshold", 4, "torchidx_threshold", OPTION_HIDDEN, NULL},
-        {"torchidx-output-cells", 5, "torchidx_out_cells", OPTION_HIDDEN, NULL},
-        {"torchidx-sample-points", 6, "torchidx_sample_points", OPTION_HIDDEN, NULL},
-        {"torchidx-filename", 7, "torchidx_filename", OPTION_HIDDEN, NULL},
+        {"torchidx-min-peaks", 2, "torchidx_minn", OPTION_HIDDEN, NULL},
+        {"torchidx-angle-resolution", 3, "torchidx_angle", OPTION_HIDDEN, NULL},
+        {"torchidx-num-top-solutions", 4, "torchidx_solutions", OPTION_HIDDEN, NULL},
+        {"torchidx-num-threads", 5, "torchidx_num_threads", OPTION_HIDDEN, NULL},
+        {"torchidx-filename", 6, "torchidx_filename", OPTION_HIDDEN, NULL},
         {0}
 };
 
