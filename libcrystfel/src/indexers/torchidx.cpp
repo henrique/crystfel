@@ -91,45 +91,51 @@ int run_torchidx(struct image *image, void *ipriv) {
     for (int i = 0; i < 9; i++)
         cell[i] = cell_internal_double[i] * 1e10;
 
-    // Create a vector of inputs.
-    std::vector<torch::jit::IValue> inputs;
-    inputs.push_back(
-        torch::from_blob(peaks, {1, npk, 3}, torch::dtype(torch::kFloat64))
-        .to(torch::kFloat32)
-        .to(prv_data->device_type) * 1e-10);
-    inputs.push_back(torch::from_blob(cell, {3, 3}).to(prv_data->device_type));
-    inputs.push_back(prv_data->opts.min_peaks);
-    inputs.push_back(prv_data->opts.angle_resolution);
-    inputs.push_back(prv_data->opts.num_top_solutions);
+    UnitCell *uc = NULL;
+    {
+        // thread-local guard that disabled gradient calculation.
+        torch::NoGradGuard no_grad;
 
-    // Execute the model and turn its output into a tuple of tensors.
-    prv_data->module.to(prv_data->device_type);
-    auto output = prv_data->module(inputs).toTuple()->elements();
-    if (output[0].toTensor().size(0) == 0) {
-        // std::cout << "input0:\n" << inputs[0] << '\n';
-        // std::cout << "input1:\n" << inputs[1] << '\n';
-        // STATUS("torchidx: crystal not found for %s\n", image->ev);
-        return 0;
+        // Create a vector of inputs.
+        std::vector<torch::jit::IValue> inputs;
+        inputs.push_back(
+            torch::from_blob(peaks, {1, npk, 3}, torch::dtype(torch::kFloat64))
+            .to(torch::kFloat32)
+            .to(prv_data->device_type) * 1e-10);
+        inputs.push_back(torch::from_blob(cell, {3, 3}).to(prv_data->device_type));
+        inputs.push_back(prv_data->opts.min_peaks);
+        inputs.push_back(prv_data->opts.angle_resolution);
+        inputs.push_back(prv_data->opts.num_top_solutions);
+
+        // Execute the model and turn its output into a tuple of tensors.
+        prv_data->module.to(prv_data->device_type);
+        auto output = prv_data->module(inputs).toTuple()->elements();
+
+        if (output[0].toTensor().size(0) == 0) {
+            // std::cout << "input0:\n" << inputs[0] << '\n';
+            // std::cout << "input1:\n" << inputs[1] << '\n';
+            // STATUS("torchidx: crystal not found for %s\n", image->ev);
+            return 0;
+        }
+
+        // std::cout << "output0:\n" << output[0] << '\n';
+        // std::cout << "output1:\n" << output[1] << '\n';
+
+        // transpose and scale
+        auto cell_m = output[1].toTensor()[0][0].transpose(0, 1) * 1e-10;
+
+        auto ocell = cell_m.accessor<float,2>();
+        uc = cell_new();
+        cell_set_cartesian(uc,
+                            ocell[0][0], ocell[1][0], ocell[2][0],
+                            ocell[0][1], ocell[1][1], ocell[2][1],
+                            ocell[0][2], ocell[1][2], ocell[2][2]);
+
+        makeRightHanded(uc);
+        cell_set_lattice_type(uc, cell_get_lattice_type(prv_data->cellTemplate));
+        cell_set_centering(uc, cell_get_centering(prv_data->cellTemplate));
+        cell_set_unique_axis(uc, cell_get_unique_axis(prv_data->cellTemplate));
     }
-
-    // std::cout << "output0:\n" << output[0] << '\n';
-    // std::cout << "output1:\n" << output[1] << '\n';
-
-    // transpose and scale
-    auto cell_m = output[1].toTensor()[0][0].transpose(0, 1) * 1e-10;
-
-    auto ocell = cell_m.accessor<float,2>();
-    UnitCell *uc;
-    uc = cell_new();
-    cell_set_cartesian(uc,
-                        ocell[0][0], ocell[1][0], ocell[2][0],
-                        ocell[0][1], ocell[1][1], ocell[2][1],
-                        ocell[0][2], ocell[1][2], ocell[2][2]);
-    makeRightHanded(uc);
-
-    cell_set_lattice_type(uc, cell_get_lattice_type(prv_data->cellTemplate));
-    cell_set_centering(uc, cell_get_centering(prv_data->cellTemplate));
-    cell_set_unique_axis(uc, cell_get_unique_axis(prv_data->cellTemplate));
 
     if ( validate_cell(uc) ) {
         ERROR("torchidx: problem with returned cell!\n");
