@@ -43,6 +43,7 @@ struct torchidx_private_data {
     UnitCell *cellTemplate;
     struct torchidx_options opts;
     torch::jit::script::Module module;
+    torch::DeviceType device_type = torch::kCPU;
 };
 
 static void makeRightHanded(UnitCell *cell)
@@ -92,20 +93,22 @@ int run_torchidx(struct image *image, void *ipriv) {
 
     // Create a vector of inputs.
     std::vector<torch::jit::IValue> inputs;
-    inputs.push_back(torch::from_blob(peaks, {1, npk, 3}, torch::dtype(torch::kFloat64)).to(torch::kFloat32) * 1e-10);
-    inputs.push_back(torch::from_blob(cell, {3, 3}));
-    // inputs.push_back(torch::from_blob(peaks, {1, npk, 3}, torch::dtype(torch::kFloat64)) * 1e-10);
-    // inputs.push_back(torch::from_blob(cell_internal_double, {3, 3}, torch::dtype(torch::kFloat64)) * 1e10);
+    inputs.push_back(
+        torch::from_blob(peaks, {1, npk, 3}, torch::dtype(torch::kFloat64))
+        .to(torch::kFloat32)
+        .to(prv_data->device_type) * 1e-10);
+    inputs.push_back(torch::from_blob(cell, {3, 3}).to(prv_data->device_type));
     inputs.push_back(prv_data->opts.min_peaks);
     inputs.push_back(prv_data->opts.angle_resolution);
     inputs.push_back(prv_data->opts.num_top_solutions);
 
     // Execute the model and turn its output into a tuple of tensors.
+    prv_data->module.to(prv_data->device_type);
     auto output = prv_data->module(inputs).toTuple()->elements();
     if (output[0].toTensor().size(0) == 0) {
         // std::cout << "input0:\n" << inputs[0] << '\n';
         // std::cout << "input1:\n" << inputs[1] << '\n';
-        STATUS("torchidx: crystal not found for %s\n", image->ev);
+        // STATUS("torchidx: crystal not found for %s\n", image->ev);
         return 0;
     }
 
@@ -169,7 +172,14 @@ void *torchidx_prepare(IndexingMethod *indm, UnitCell *cell, struct torchidx_opt
         return NULL;
     }
 
-    // *indm &= INDEXING_METHOD_MASK | INDEXING_USE_CELL_PARAMETERS;
+    // if (torch::cuda::is_available()) {
+    //     std::cout << "CUDA available! Running on GPU." << std::endl;
+    //     prv_data->device_type = torch::kCUDA;
+    // } else {
+        std::cout << "Running on CPU." << std::endl;
+        prv_data->device_type = torch::kCPU;
+    // }
+
     return prv_data;
 }
 
@@ -220,9 +230,9 @@ static void torchidx_show_help()
            "     --torchidx-angle-resolution\n"
            "                            The number of samples used to rotate the given triples.\n"
            "                            Default: 180\n"
-           "     --torchidx-num-top-solutionsn"
+           "     --torchidx-num-top-solutions\n"
            "                            The number of candidate solutions to be considered by the algorithm.\n"
-           "                            Default: 1\n"
+           "                            Default: 200\n"
            "     --torchidx-num-threads\n"
            "                            Number of threads on each worker process.\n"
            "                            Default: 1\n"
@@ -240,7 +250,7 @@ int torchidx_default_options(struct torchidx_options **opts_ptr)
 
     opts->min_peaks = 9;
     opts->angle_resolution = 180;
-    opts->num_top_solutions = 1;
+    opts->num_top_solutions = 200;
     opts->num_threads = 1;
     opts->filename = NULL;
     *opts_ptr = opts;
