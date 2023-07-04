@@ -42,6 +42,7 @@
 struct torchidx_private_data {
     UnitCell *cellTemplate;
     struct torchidx_options opts;
+    std::vector<float> params;
     torch::jit::script::Module module;
     torch::DeviceType device_type = torch::kCPU;
 };
@@ -60,13 +61,9 @@ static void makeRightHanded(UnitCell *cell)
 int run_torchidx(struct image *image, void *ipriv) {
     int npk;
     int i;
-
     struct torchidx_private_data *prv_data = (struct torchidx_private_data *) ipriv;
 
     npk = image_feature_count(image->features);
-    if ( npk < prv_data->opts.min_peaks )
-        return 0;
-
     double peaks[npk][3];
     for ( i=0; i<npk; i++ ) {
         struct imagefeature *f = image_get_feature(image->features, i);
@@ -103,9 +100,7 @@ int run_torchidx(struct image *image, void *ipriv) {
             .to(torch::kFloat32)
             .to(prv_data->device_type) * 1e-10);
         inputs.push_back(torch::from_blob(cell, {3, 3}).to(prv_data->device_type));
-        inputs.push_back(prv_data->opts.min_peaks);
-        inputs.push_back(prv_data->opts.angle_resolution);
-        inputs.push_back(prv_data->opts.num_top_solutions);
+        inputs.push_back(torch::from_blob(prv_data->params.data(), {prv_data->params.size()}).to(prv_data->device_type));
 
         // Execute the model and turn its output into a tuple of tensors.
         prv_data->module.to(prv_data->device_type);
@@ -154,28 +149,43 @@ int run_torchidx(struct image *image, void *ipriv) {
     return 1;
 }
 
+
+static std::vector<float> parse_params(char *cvs_params)
+{
+    std::vector<float> params;
+    std::stringstream ss(cvs_params);
+    float i;
+
+    while (ss >> i) {
+        params.push_back(i);
+        if (ss.peek() == ',') ss.ignore();
+    }
+    return params;
+}
+
 void *torchidx_prepare(IndexingMethod *indm, UnitCell *cell, struct torchidx_options *opts) {
     if ( cell == NULL ) {
         ERROR("Unit cell information is required for fast feedback indexer.\n");
         return NULL;
     }
 
-    // struct torchidx_private_data *prv_data = (struct torchidx_private_data *) malloc(sizeof(struct torchidx_private_data));
     struct torchidx_private_data *prv_data = new torchidx_private_data;
-
     prv_data->cellTemplate = cell;
     prv_data->opts = *opts;
+    torch::set_num_threads(prv_data->opts.num_threads);
 
     try {
         // Deserialize the ScriptModule from a file using torch::jit::load().
         STATUS("Loading model %s.\n", opts->filename);
         prv_data->module = torch::jit::load(opts->filename);
-        torch::set_num_threads(prv_data->opts.num_threads);
-        STATUS("Loaded model %s.\n", opts->filename);
-    }
-    catch (const c10::Error& e) {
+    } catch (const c10::Error& e) {
         ERROR("Error loading the model %s.\n", opts->filename);
         return NULL;
+    }
+
+    if (opts->params != NULL) {
+        STATUS("Parsing model parameters '%s'.\n", opts->params);
+        prv_data->params = parse_params(opts->params);
     }
 
     // if (torch::cuda::is_available()) {
@@ -230,21 +240,13 @@ const char *torchidx_probe(UnitCell *cell)
 static void torchidx_show_help()
 {
     printf("Parameters for the fast feedback indexing algorithm:\n"
-           "     --torchidx-min-peaks\n"
-           "                            The minimum number of spots that a valid solution most have.\n"
-           "                            Default: 9\n"
-           "     --torchidx-angle-resolution\n"
-           "                            The number of samples used to rotate the given triples.\n"
-           "                            Default: 180\n"
-           "     --torchidx-num-top-solutions\n"
-           "                            The number of candidate solutions to be considered by the algorithm.\n"
-           "                            Default: 200\n"
+           "     --torchidx-filename\n"
+           "                            TorchScript filename.\n"
+           "     --torchidx-params\n"
+           "                            Comma separated list of parameters as required by the TorchScript module.\n"
            "     --torchidx-num-threads\n"
            "                            Number of threads on each worker process.\n"
            "                            Default: 1\n"
-           "     --torchidx-filename\n"
-           "                            TorchScript filename.\n"
-
     );
 }
 
@@ -254,11 +256,9 @@ int torchidx_default_options(struct torchidx_options **opts_ptr)
     struct torchidx_options *opts = new torchidx_options();
     if ( opts == NULL ) return ENOMEM;
 
-    opts->min_peaks = 9;
-    opts->angle_resolution = 180;
-    opts->num_top_solutions = 200;
-    opts->num_threads = 1;
     opts->filename = NULL;
+    opts->params = NULL;
+    opts->num_threads = 1;
     *opts_ptr = opts;
     return 0;
 }
@@ -279,36 +279,13 @@ static error_t torchidx_parse_arg(int key, char *arg, struct argp_state *state)
             return EINVAL;
 
         case 2 :
-            if (sscanf(arg, "%u", &(*opts_ptr)->min_peaks) != 1) {
-                ERROR("Invalid value for --torchidx-min-peaks\n");
-                return EINVAL;
-            }
+            STATUS("--torchidx-filename %s \n", arg);
+            (*opts_ptr)->filename = arg;
             break;
 
         case 3 :
-            if (sscanf(arg, "%u", &(*opts_ptr)->angle_resolution) != 1) {
-                ERROR("Invalid value for --torchidx-angle-resolution\n");
-                return EINVAL;
-            }
-            break;
-
-        case 4 :
-            if (sscanf(arg, "%u", &(*opts_ptr)->num_top_solutions) != 1) {
-                ERROR("Invalid value for --torchidx-num-top-solutions\n");
-                return EINVAL;
-            }
-            break;
-
-        case 5 :
-            if (sscanf(arg, "%u", &(*opts_ptr)->num_threads) != 1) {
-                ERROR("Invalid value for --torchidx-num-threads\n");
-                return EINVAL;
-            }
-            break;
-
-        case 6 :
-            STATUS("--torchidx-filename %s \n", arg);
-            (*opts_ptr)->filename = arg;
+            STATUS("--torchidx-params %s \n", arg);
+            (*opts_ptr)->params = arg;
             break;
     }
 
@@ -318,11 +295,9 @@ static error_t torchidx_parse_arg(int key, char *arg, struct argp_state *state)
 
 static struct argp_option torchidx_options[] = {
         {"help-torchidx", 1, NULL, OPTION_NO_USAGE, "Show options for fast feedback indexing algorithm", 99},
-        {"torchidx-min-peaks", 2, "torchidx_minn", OPTION_HIDDEN, NULL},
-        {"torchidx-angle-resolution", 3, "torchidx_angle", OPTION_HIDDEN, NULL},
-        {"torchidx-num-top-solutions", 4, "torchidx_solutions", OPTION_HIDDEN, NULL},
-        {"torchidx-num-threads", 5, "torchidx_num_threads", OPTION_HIDDEN, NULL},
-        {"torchidx-filename", 6, "torchidx_filename", OPTION_HIDDEN, NULL},
+        {"torchidx-filename", 2, "torchidx_filename", OPTION_HIDDEN, NULL},
+        {"torchidx-params", 3, "torchidx_params", OPTION_HIDDEN, NULL},
+        {"torchidx-num-threads", 4, "torchidx_num_threads", OPTION_HIDDEN, NULL},
         {0}
 };
 

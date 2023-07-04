@@ -160,11 +160,9 @@ struct xgandalf_options {
 };
 
 struct torchidx_options {
-	int min_peaks;         // The minimum number of spots that a valid solution most have
-	int angle_resolution;  // The number of samples used to rotate the given triples
-	int num_top_solutions; // The number of candidate solutions to be considered by the algorithm
-	int num_threads;
 	char *filename;
+	char *params;
+	int num_threads;
 };
 
 struct taketwo_options
