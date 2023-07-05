@@ -627,8 +627,8 @@ static void run_indexing_once(struct crystfelproject *proj)
 	                       detgeom_mean_camera_length(proj->cur_image->detgeom),
 	                       1,
 	                       taketwoopts, xgandalf_opts,
-                           torchidx_opts, pinkIndexer_opts,
-                           felix_opts, NULL, asdf_opts);
+                         torchidx_opts, pinkIndexer_opts,
+                         felix_opts, NULL, asdf_opts);
 	free(methods);
 
 	index_pattern(proj->cur_image, ipriv);
