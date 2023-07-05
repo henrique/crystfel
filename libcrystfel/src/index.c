@@ -175,9 +175,9 @@ char *base_indexer_str(IndexingMethod indm)
 		strcpy(str, "file");
 		break;
 
-        case INDEXING_TORCHIDX :
-        strcpy(str, "torchidx");
-        break;
+		case INDEXING_TORCHIDX :
+		strcpy(str, "torchidx");
+		break;
 
 		default :
 		strcpy(str, "(unknown)");
@@ -522,9 +522,9 @@ void cleanup_indexing(IndexingPrivate *ipriv)
 			xgandalf_cleanup(ipriv->engine_private[n]);
 			break;
 
-            case INDEXING_TORCHIDX:
-            torchidx_cleanup(ipriv->engine_private[n]);
-            break;
+			case INDEXING_TORCHIDX:
+			torchidx_cleanup(ipriv->engine_private[n]);
+			break;
 
 			case INDEXING_PINKINDEXER :
 			pinkIndexer_cleanup(ipriv->engine_private[n]);
