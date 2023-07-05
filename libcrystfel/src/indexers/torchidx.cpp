@@ -106,7 +106,8 @@ int run_torchidx(struct image *image, void *ipriv) {
         prv_data->module.to(prv_data->device_type);
         auto output = prv_data->module(inputs).toTuple()->elements();
 
-        if (output[0].toTensor().size(0) == 0) {
+        if (output[0].toTensor().size(0) == 0 ||
+            at::isnan(output[1].toTensor()).any().item<bool>()) {
             // std::cout << "input0:\n" << inputs[0] << '\n';
             // std::cout << "input1:\n" << inputs[1] << '\n';
             // STATUS("torchidx: crystal not found for %s\n", image->ev);
