@@ -1255,7 +1255,7 @@ char *detect_indexing_methods(UnitCell *cell)
 	do_probe(asdf_probe, cell, methods);
 	do_probe(dirax_probe, cell, methods);
 	do_probe(xds_probe, cell, methods);
-    do_probe(torchidx_probe, cell, methods);
+	do_probe(torchidx_probe, cell, methods);
 
 	//do_probe(felix_probe, cell, methods);
 	//do_probe(pinkIndexer_probe, cell, methods);

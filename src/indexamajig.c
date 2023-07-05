@@ -1331,7 +1331,7 @@ int main(int argc, char *argv[])
 		                                  args.iargs.n_threads,
 		                                  taketwo_opts,
 		                                  xgandalf_opts,
-																			torchidx_opts,
+		                                  torchidx_opts,
 		                                  pinkindexer_opts,
 		                                  felix_opts,
 		                                  fromfile_opts,
